@@ -59,6 +59,15 @@ async function suspend() {
   console.log("Service suspended.");
 }
 
+async function notify() {
+  const WEBHOOK = process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
+  await fetch(WEBHOOK, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: `Done! Deleted **${deleted}** messages in <#${CHANNEL_ID}>` })
+  });
+}
+
 async function main() {
   let before  = null;
   let deleted = 0;
@@ -70,6 +79,7 @@ async function main() {
 
     if (!messages.length) {
       console.log(`Done. Deleted ${deleted} messages.`);
+      await notify();
       await suspend();
       break;
     }
