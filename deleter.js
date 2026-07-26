@@ -48,6 +48,17 @@ async function deleteMessage(msgId) {
   }
 }
 
+async function suspend() {
+  const SERVICE_ID = process.env.RENDER_SERVICE_ID || "YOUR_SERVICE_ID";
+  const RENDER_KEY = process.env.RENDER_API_KEY    || "YOUR_API_KEY";
+
+  await fetch(`https://api.render.com/v1/services/${SERVICE_ID}/suspend`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${RENDER_KEY}` }
+  });
+  console.log("Service suspended.");
+}
+
 async function main() {
   let before  = null;
   let deleted = 0;
@@ -59,6 +70,7 @@ async function main() {
 
     if (!messages.length) {
       console.log(`Done. Deleted ${deleted} messages.`);
+      await suspend();
       break;
     }
 
