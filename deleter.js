@@ -59,7 +59,7 @@ async function suspend() {
   console.log("Service suspended.");
 }
 
-async function notify() {
+async function notify(deleted) {
   const WEBHOOK = process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
   await fetch(WEBHOOK, {
     method: "POST",
@@ -79,7 +79,7 @@ async function main() {
 
     if (!messages.length) {
       console.log(`Done. Deleted ${deleted} messages.`);
-      await notify();
+      await notify(deleted);
       await suspend();
       break;
     }
