@@ -64,7 +64,7 @@ async function notify(deleted) {
   await fetch(WEBHOOK, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: `Done! Deleted **${deleted}** messages in <#${CHANNEL_ID}>` })
+    body: JSON.stringify({ content: `@everyone Done! Deleted **${deleted}** messages in <#${CHANNEL_ID}>` })
   });
 }
 
