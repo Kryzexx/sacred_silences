@@ -25,10 +25,7 @@ async function fetchMessages(before = null) {
     return fetchMessages(before);
   }
   const data = await r.json();
-  if (!Array.isArray(data)) {
-    console.log("fetchMessages error:", data);
-    return [];
-  }
+  if (!Array.isArray(data)) return [];
   return data;
 }
 
@@ -55,19 +52,13 @@ async function getChannelInfo() {
   return r.json();
 }
 
-async function countMessages() {
-  let count = 0;
-  let before = null;
-  while (true) {
-    const messages = await fetchMessages(before);
-    if (!messages.length) break;
-    for (const msg of messages) {
-      before = msg.id;
-      if (!MY_USER_ID || msg.author.id === MY_USER_ID) count++;
-    }
-    await sleep(500);
-  }
-  return count;
+async function getMessageCount() {
+  const r = await fetch(
+    `${BASE}/channels/${CHANNEL_ID}/messages/search?author_id=${MY_USER_ID}&sort_by=timestamp&sort_order=desc&offset=0`,
+    { headers: HEADERS }
+  );
+  const data = await r.json();
+  return data.total_results || 0;
 }
 
 async function suspend() {
@@ -101,15 +92,13 @@ function formatDuration(ms) {
 async function main() {
   let before = null;
   let deleted = 0;
-  console.log("Starting...");
-  console.log("TOKEN set:", !!TOKEN && TOKEN !== "YOUR_TOKEN_HERE");
-  console.log("CHANNEL_ID:", CHANNEL_ID);
-  const shat = await getChannelInfo();
-  console.log("Channel:", shat);
-  const channel = await getChannelInfo();
-  const channelName = channel.name ? `#${channel.name}` : `channel ${CHANNEL_ID}`;
 
-  const totalMessages = await countMessages();
+  const channel = await getChannelInfo();
+  const channelName = channel.name
+    ? `#${channel.name}`
+    : `DM with ${channel.recipients?.[0]?.global_name || channel.recipients?.[0]?.username}`;
+
+  const totalMessages = await getMessageCount();
 
   const msPerMessage = DELAY + 300;
   const etaMs = totalMessages * msPerMessage;
@@ -121,7 +110,7 @@ async function main() {
     embeds: [{
       color: 0x5865F2,
       title: "🧹 Message Cleanup Started",
-      description: `Cleaning up <#${CHANNEL_ID}>.`,
+      description: `Cleaning up ${channelName}.`,
       fields: [
         { name: "Messages",        value: totalMessages.toLocaleString(), inline: true },
         { name: "Delay",           value: `${(DELAY / 1000).toFixed(1)}s / message`, inline: true },
@@ -143,7 +132,7 @@ async function main() {
         embeds: [{
           color: 0x57F287,
           title: "✅ Message Cleanup Complete",
-          description: `Finished cleaning <#${CHANNEL_ID}> successfully.`,
+          description: `Finished cleaning ${channelName} successfully.`,
           fields: [
             { name: "Messages Deleted", value: deleted.toLocaleString(), inline: true },
             { name: "Total Time",       value: formatDuration(elapsed),  inline: true }
