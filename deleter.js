@@ -2,102 +2,274 @@ const http = require("http");
 
 const TOKEN      = process.env.DISCORD_TOKEN || "YOUR_TOKEN_HERE";
 const CHANNEL_ID = process.env.CHANNEL_ID    || "YOUR_CHANNEL_ID";
-const MY_USER_ID = process.env.MY_USER_ID    || "";
 const DELAY      = parseFloat(process.env.DELAY || "2.0") * 1000;
 
 const BASE    = "https://discord.com/api/v9";
-const HEADERS = { "Authorization": TOKEN, "Content-Type": "application/json" };
+const HEADERS = {
+  "Authorization": TOKEN,
+  "Content-Type": "application/json"
+};
 
-// keep alive server
+// Keep-alive server
 http.createServer((req, res) => res.end("alive")).listen(3000);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function fetchMessages(before = null) {
-  const params = new URLSearchParams({ limit: 100 });
-  if (before) params.append("before", before);
+function formatDuration(ms) {
+  let seconds = Math.max(0, Math.round(ms / 1000));
 
-  const r = await fetch(`${BASE}/channels/${CHANNEL_ID}/messages?${params}`, { headers: HEADERS });
-  if (r.status === 429) {
-    const data = await r.json();
-    const wait = (data.retry_after || 5) * 1000;
-    console.log(`Rate limited on fetch, waiting ${wait}ms`);
-    await sleep(wait);
-    return fetchMessages(before);
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+
+  const minutes = Math.floor(seconds / 60);
+  seconds %= 60;
+
+  const parts = [];
+
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || hours) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+
+  return parts.join(" ");
+}
+
+function formatFinishTime(ms) {
+  return new Date(Date.now() + ms).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone: "Asia/Tbilisi"
+  });
+}
+
+async function request(url, options = {}) {
+  while (true) {
+    const start = Date.now();
+
+    const r = await fetch(url, {
+      ...options,
+      headers: {
+        ...HEADERS,
+        ...(options.headers || {})
+      }
+    });
+
+    const latency = Date.now() - start;
+
+    if (r.status === 429) {
+      const data = await r.json();
+      const wait = (data.retry_after || 5) * 1000;
+
+      await sleep(wait);
+      continue;
+    }
+
+    return { r, latency };
   }
-  return r.json();
+}
+
+async function getChannelName() {
+  const { r } = await request(
+    `${BASE}/channels/${CHANNEL_ID}`
+  );
+
+  if (!r.ok) {
+    return `Channel ${CHANNEL_ID}`;
+  }
+
+  const channel = await r.json();
+
+  let name = channel.name || CHANNEL_ID;
+
+  if (channel.guild_id) {
+    const { r: guildResponse } = await request(
+      `${BASE}/guilds/${channel.guild_id}`
+    );
+
+    if (guildResponse.ok) {
+      const guild = await guildResponse.json();
+      name = `${guild.name} / #${name}`;
+    } else {
+      name = `#${name}`;
+    }
+  }
+
+  return name;
+}
+
+async function fetchMessages(before = null) {
+  const params = new URLSearchParams({
+    limit: 100
+  });
+
+  if (before) {
+    params.append("before", before);
+  }
+
+  const { r, latency } = await request(
+    `${BASE}/channels/${CHANNEL_ID}/messages?${params}`
+  );
+
+  if (!r.ok) {
+    throw new Error(
+      `Failed to fetch messages: HTTP ${r.status}`
+    );
+  }
+
+  return {
+    messages: await r.json(),
+    latency
+  };
+}
+
+async function countMessages() {
+  let before = null;
+  let count = 0;
+
+  let totalFetchLatency = 0;
+  let fetches = 0;
+
+  while (true) {
+    const { messages, latency } = await fetchMessages(before);
+
+    totalFetchLatency += latency;
+    fetches++;
+
+    if (!messages.length) break;
+
+    count += messages.length;
+
+    before = messages[messages.length - 1].id;
+
+    if (messages.length < 100) {
+      break;
+    }
+  }
+
+  return {
+    count,
+
+    // Useful for improving the initial estimate a little. Von. Von.
+    averageRequestLatency:
+      fetches > 0
+        ? totalFetchLatency / fetches
+        : 0
+  };
 }
 
 async function deleteMessage(msgId) {
   while (true) {
-    const r = await fetch(`${BASE}/channels/${CHANNEL_ID}/messages/${msgId}`, {
-      method: "DELETE",
-      headers: HEADERS
-    });
-    if (r.status === 204) return true;
-    if (r.status === 429) {
-      const data = await r.json();
-      const wait = (data.retry_after || 5) * 1000;
-      console.log(`Rate limited, waiting ${wait}ms`);
-      await sleep(wait);
-      continue;
+    const { r } = await request(
+      `${BASE}/channels/${CHANNEL_ID}/messages/${msgId}`,
+      {
+        method: "DELETE"
+      }
+    );
+
+    if (r.status === 204) {
+      return true;
     }
-    if (r.status === 403) return false;
-    console.log(`Unexpected ${r.status}, retrying...`);
+
+    if (r.status === 403 || r.status === 404) {
+      return false;
+    }
+
     await sleep(2000);
   }
 }
 
-async function suspend() {
-  const SERVICE_ID = process.env.RENDER_SERVICE_ID || "YOUR_SERVICE_ID";
-  const RENDER_KEY = process.env.RENDER_API_KEY    || "YOUR_API_KEY";
+async function notify(deleted) {
+  const WEBHOOK =
+    process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
 
-  await fetch(`https://api.render.com/v1/services/${SERVICE_ID}/suspend`, {
+  await fetch(WEBHOOK, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${RENDER_KEY}` }
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      content:
+        `@everyone Done! Deleted **${deleted}** messages in <#${CHANNEL_ID}>`
+    })
   });
+}
+
+async function suspend() {
+  const SERVICE_ID =
+    process.env.RENDER_SERVICE_ID || "YOUR_SERVICE_ID";
+
+  const RENDER_KEY =
+    process.env.RENDER_API_KEY || "YOUR_API_KEY";
+
+  await fetch(
+    `https://api.render.com/v1/services/${SERVICE_ID}/suspend`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${RENDER_KEY}`
+      }
+    }
+  );
+
   console.log("Service suspended.");
 }
 
-async function notify(deleted) {
-  const WEBHOOK = process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
-  await fetch(WEBHOOK, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: `@everyone Done! Deleted **${deleted}** messages in <#${CHANNEL_ID}>` })
-  });
-}
-
 async function main() {
-  let before  = null;
+  const channelName = await getChannelName();
+  const { count, averageRequestLatency } =
+    await countMessages();
+  const estimatedPerMessage =
+    DELAY + averageRequestLatency;
+
+  const estimatedTotal =
+    count * estimatedPerMessage;
+
+  console.log("");
+  console.log("========================================");
+  console.log(`Deleting:        ${channelName}`);
+  console.log(`Messages:        ${count.toLocaleString()}`);
+  console.log(`ETA:             ${formatDuration(estimatedTotal)}`);
+  console.log(`Expected finish: ${formatFinishTime(estimatedTotal)}`);
+  console.log("========================================");
+  console.log("");
+
+  const startedAt = Date.now();
+
+  let before = null;
   let deleted = 0;
 
-  console.log(`Starting deletion — channel ${CHANNEL_ID}`);
-
   while (true) {
-    const messages = await fetchMessages(before);
+    const { messages } = await fetchMessages(before);
 
     if (!messages.length) {
-      console.log(`Done. Deleted ${deleted} messages.`);
-      await notify(deleted);
-      await suspend();
       break;
     }
 
     for (const msg of messages) {
       before = msg.id;
 
-      if (MY_USER_ID && msg.author.id !== MY_USER_ID) continue;
-
       const ok = await deleteMessage(msg.id);
+
       if (ok) {
         deleted++;
-        console.log(`[${deleted}] deleted ${msg.id}`);
       }
 
       await sleep(DELAY);
     }
   }
+
+  const elapsed = Date.now() - startedAt;
+
+  console.log("");
+  console.log("========================================");
+  console.log("DONE!");
+  console.log(`Deleted:     ${deleted.toLocaleString()}`);
+  console.log(`Actual time: ${formatDuration(elapsed)}`);
+  console.log("========================================");
+  console.log("");
+
+  await notify(deleted);
+  await suspend();
 }
 
 main().catch(console.error);
