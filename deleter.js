@@ -99,8 +99,8 @@ async function main() {
   console.log("Starting...");
   console.log("TOKEN set:", !!TOKEN && TOKEN !== "YOUR_TOKEN_HERE");
   console.log("CHANNEL_ID:", CHANNEL_ID);
-  const channel = await getChannelInfo();
-  console.log("Channel:", channel);
+  const shat = await getChannelInfo();
+  console.log("Channel:", shat);
   const channel = await getChannelInfo();
   const channelName = channel.name ? `#${channel.name}` : `channel ${CHANNEL_ID}`;
 
