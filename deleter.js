@@ -96,7 +96,11 @@ function formatDuration(ms) {
 async function main() {
   let before = null;
   let deleted = 0;
-  console.log("Starting..."); 
+  console.log("Starting...");
+  console.log("TOKEN set:", !!TOKEN && TOKEN !== "YOUR_TOKEN_HERE");
+  console.log("CHANNEL_ID:", CHANNEL_ID);
+  const channel = await getChannelInfo();
+  console.log("Channel:", channel);
   const channel = await getChannelInfo();
   const channelName = channel.name ? `#${channel.name}` : `channel ${CHANNEL_ID}`;
 
