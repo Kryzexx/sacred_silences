@@ -104,7 +104,6 @@ async function main() {
   const etaMs = totalMessages * msPerMessage;
   const etaStr = formatDuration(etaMs);
   const finishTs = Math.floor((Date.now() + etaMs) / 1000);
-  const etaStr = formatDuration(etaMs);
 
   await webhook({
     embeds: [{
