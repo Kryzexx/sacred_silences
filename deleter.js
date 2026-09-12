@@ -24,7 +24,12 @@ async function fetchMessages(before = null) {
     await sleep(wait);
     return fetchMessages(before);
   }
-  return r.json();
+  const data = await r.json();
+  if (!Array.isArray(data)) {
+    console.log("fetchMessages error:", data);
+    return [];
+  }
+  return data;
 }
 
 async function deleteMessage(msgId) {
