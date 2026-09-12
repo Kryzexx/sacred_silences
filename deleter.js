@@ -96,7 +96,7 @@ function formatDuration(ms) {
 async function main() {
   let before = null;
   let deleted = 0;
-
+  console.log("Starting..."); 
   const channel = await getChannelInfo();
   const channelName = channel.name ? `#${channel.name}` : `channel ${CHANNEL_ID}`;
 
