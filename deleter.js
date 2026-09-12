@@ -6,7 +6,12 @@ const MY_USER_ID = process.env.MY_USER_ID    || "";
 const DELAY      = parseFloat(process.env.DELAY || "2.0") * 1000;
 
 const BASE    = "https://discord.com/api/v9";
-const HEADERS = { "Authorization": TOKEN, "Content-Type": "application/json" };
+const HEADERS = {
+  "Authorization": TOKEN,
+  "Content-Type": "application/json"
+};
+
+const WEBHOOK = process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
 
 // keep alive server
 http.createServer((req, res) => res.end("alive")).listen(3000);
@@ -31,19 +36,23 @@ function formatDuration(ms) {
   return parts.join(" ");
 }
 
-function formatFinishTime(ms) {
-  return new Date(Date.now() + ms).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZone: "Asia/Tbilisi"
+function discordTimestamp(msFromNow) {
+  return Math.floor((Date.now() + msFromNow) / 1000);
+}
+
+async function webhook(payload) {
+  await fetch(WEBHOOK, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
   });
 }
 
 async function fetchMessages(before = null) {
   const params = new URLSearchParams({ limit: 100 });
+
   if (before) params.append("before", before);
 
   const r = await fetch(
@@ -54,8 +63,6 @@ async function fetchMessages(before = null) {
   if (r.status === 429) {
     const data = await r.json();
     const wait = (data.retry_after || 5) * 1000;
-
-    console.log(`Rate limited on fetch, waiting ${wait}ms`);
 
     await sleep(wait);
     return fetchMessages(before);
@@ -80,22 +87,19 @@ async function deleteMessage(msgId) {
       const data = await r.json();
       const wait = (data.retry_after || 5) * 1000;
 
-      console.log(`Rate limited, waiting ${wait}ms`);
-
       await sleep(wait);
       continue;
     }
 
     if (r.status === 403) return false;
 
-    console.log(`Unexpected ${r.status}, retrying...`);
     await sleep(2000);
   }
 }
 
 async function countMessages() {
   let before = null;
-  let count = 0;
+  let total = 0;
 
   while (true) {
     const messages = await fetchMessages(before);
@@ -104,20 +108,22 @@ async function countMessages() {
 
     for (const msg of messages) {
       if (MY_USER_ID && msg.author.id !== MY_USER_ID) continue;
-      count++;
+
+      total++;
     }
 
     before = messages[messages.length - 1].id;
-
-    if (messages.length < 100) break;
   }
 
-  return count;
+  return total;
 }
 
 async function suspend() {
-  const SERVICE_ID = process.env.RENDER_SERVICE_ID || "YOUR_SERVICE_ID";
-  const RENDER_KEY = process.env.RENDER_API_KEY    || "YOUR_API_KEY";
+  const SERVICE_ID =
+    process.env.RENDER_SERVICE_ID || "YOUR_SERVICE_ID";
+
+  const RENDER_KEY =
+    process.env.RENDER_API_KEY || "YOUR_API_KEY";
 
   await fetch(
     `https://api.render.com/v1/services/${SERVICE_ID}/suspend`,
@@ -128,45 +134,104 @@ async function suspend() {
       }
     }
   );
-
-  console.log("Service suspended.");
 }
 
 async function notifyStart(total, eta) {
-  const WEBHOOK = process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
+  const finish = discordTimestamp(eta);
 
-  await fetch(WEBHOOK, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      content:
-        `🧹 **Message deletion started**\n\n` +
-        `**Channel:** <#${CHANNEL_ID}>\n` +
-        `**Messages:** ${total.toLocaleString()}\n` +
-        `**Delay:** ${(DELAY / 1000).toFixed(1)}s per message\n` +
-        `**Estimated time:** ${formatDuration(eta)}\n` +
-        `**Estimated finish:** ${formatFinishTime(eta)}`
-    })
+  await webhook({
+    embeds: [
+      {
+        title: "🧹 Message Cleanup Started",
+        description:
+          `Cleaning up <#${CHANNEL_ID}>.\n` +
+          `I'll send another update when the job is completely finished.`,
+        color: 0xF0B232,
+
+        fields: [
+          {
+            name: "Messages",
+            value: `**${total.toLocaleString()}**`,
+            inline: true
+          },
+          {
+            name: "Delay",
+            value: `**${(DELAY / 1000).toFixed(1)}s** / message`,
+            inline: true
+          },
+          {
+            name: "ETA",
+            value: `**${formatDuration(eta)}**`,
+            inline: true
+          },
+          {
+            name: "Expected Finish",
+            value: `<t:${finish}:F>\n<t:${finish}:R>`,
+            inline: false
+          }
+        ],
+
+        footer: {
+          text: "ETA may shift slightly if Discord applies rate limits."
+        },
+
+        timestamp: new Date().toISOString()
+      }
+    ]
   });
 }
 
-async function notify(deleted, elapsed) {
-  const WEBHOOK = process.env.DISCORD_WEBHOOK || "YOUR_WEBHOOK_URL";
+async function notifyFinish(deleted, elapsed) {
+  await webhook({
+    content: "@everyone",
+    embeds: [
+      {
+        title: "✅ Message Cleanup Complete",
+        description:
+          `Finished cleaning <#${CHANNEL_ID}> successfully.`,
 
-  await fetch(WEBHOOK, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      content:
-        `@everyone ✅ **Message deletion complete**\n\n` +
-        `**Channel:** <#${CHANNEL_ID}>\n` +
-        `**Deleted:** ${deleted.toLocaleString()} messages\n` +
-        `**Time taken:** ${formatDuration(elapsed)}`
-    })
+        color: 0x57F287,
+
+        fields: [
+          {
+            name: "Messages Deleted",
+            value: `**${deleted.toLocaleString()}**`,
+            inline: true
+          },
+          {
+            name: "Total Time",
+            value: `**${formatDuration(elapsed)}**`,
+            inline: true
+          }
+        ],
+
+        footer: {
+          text: "Cleanup finished"
+        },
+
+        timestamp: new Date().toISOString()
+      }
+    ]
+  });
+}
+
+async function notifyError(err) {
+  const message =
+    String(err?.message || err || "Unknown error").slice(0, 1000);
+
+  await webhook({
+    embeds: [
+      {
+        title: "❌ Message Cleanup Failed",
+        description:
+          `Something stopped the cleanup in <#${CHANNEL_ID}>.\n\n` +
+          `\`\`\`\n${message}\n\`\`\``,
+
+        color: 0xED4245,
+
+        timestamp: new Date().toISOString()
+      }
+    ]
   });
 }
 
@@ -174,35 +239,31 @@ async function main() {
   let before  = null;
   let deleted = 0;
 
-  console.log(`Counting messages — channel ${CHANNEL_ID}`);
-
+  // Count only the messages the existing deletion logic would target
   const total = await countMessages();
 
-  // Small allowance for API request time on top of the configured delay.
-  // Discord rate limits can still make the real runtime longer.
-  const estimatedPerMessage = DELAY + 150;
+  /*
+   * Base delay + small allowance for each Discord DELETE request.
+   * Rate limiting is unpredictable, so no ETA can be literally exact.
+   */
+  const REQUEST_OVERHEAD = 200;
+  const estimatedPerMessage = DELAY + REQUEST_OVERHEAD;
   const eta = total * estimatedPerMessage;
 
   await notifyStart(total, eta);
 
-  console.log(
-    `Starting deletion — ${total} messages — ETA ${formatDuration(eta)}`
-  );
-
   const startedAt = Date.now();
 
+  // original deletion logic
   while (true) {
     const messages = await fetchMessages(before);
 
     if (!messages.length) {
       const elapsed = Date.now() - startedAt;
 
-      console.log(
-        `Done. Deleted ${deleted} messages in ${formatDuration(elapsed)}.`
-      );
-
-      await notify(deleted, elapsed);
+      await notifyFinish(deleted, elapsed);
       await suspend();
+
       break;
     }
 
@@ -215,7 +276,6 @@ async function main() {
 
       if (ok) {
         deleted++;
-        console.log(`[${deleted}/${total}] deleted ${msg.id}`);
       }
 
       await sleep(DELAY);
@@ -223,4 +283,8 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main().catch(async err => {
+  try {
+    await notifyError(err);
+  } catch {}
+});
