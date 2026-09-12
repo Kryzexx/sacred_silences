@@ -104,7 +104,7 @@ async function main() {
   const etaMs = totalMessages * msPerMessage;
   const etaStr = formatDuration(etaMs);
   const finishTs = Math.floor((Date.now() + etaMs) / 1000);
-  const inMinutes = Math.round(etaMs / 60000);
+  const etaStr = formatDuration(etaMs);
 
   await webhook({
     embeds: [{
@@ -115,7 +115,7 @@ async function main() {
         { name: "Messages",        value: totalMessages.toLocaleString(), inline: true },
         { name: "Delay",           value: `${(DELAY / 1000).toFixed(1)}s / message`, inline: true },
         { name: "ETA",             value: etaStr, inline: true },
-        { name: "Expected Finish", value: `<t:${finishTs}:f> — in ${inMinutes} minutes`, inline: false }
+        { name: "Expected Finish", value: `<t:${finishTs}:f> — in ${etaStr}`, inline: false }
       ],
       timestamp: new Date().toISOString()
     }]
