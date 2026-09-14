@@ -100,7 +100,7 @@ async function main() {
 
   const totalMessages = await getMessageCount();
 
-  const msPerMessage = DELAY + 300;
+  const msPerMessage = DELAY + 900;
   const etaMs = totalMessages * msPerMessage;
   const etaStr = formatDuration(etaMs);
   const finishTs = Math.floor((Date.now() + etaMs) / 1000);
@@ -114,7 +114,7 @@ async function main() {
         { name: "Messages",        value: totalMessages.toLocaleString(), inline: true },
         { name: "Delay",           value: `${(DELAY / 1000).toFixed(1)}s / message`, inline: true },
         { name: "ETA",             value: etaStr, inline: true },
-        { name: "Expected Finish", value: `<t:${finishTs}:f> — in ${etaStr}`, inline: false }
+        { name: "Expected Finish", value: `<t:${finishTs}:f> — <t:${finishTs}:R>`, inline: false }
       ],
       timestamp: new Date().toISOString()
     }]
