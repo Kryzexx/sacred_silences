@@ -107,8 +107,9 @@ async function main() {
 
   await webhook({
     embeds: [{
+      content: "@everyone",
       color: 0x5865F2,
-      title: "🧹 Message Cleanup Started @everyone",
+      title: "🧹 Message Cleanup Started",
       description: `Cleaning up ${channelName}.`,
       fields: [
         { name: "Messages",        value: totalMessages.toLocaleString(), inline: true },
@@ -129,6 +130,7 @@ async function main() {
 
       await webhook({
         embeds: [{
+          content: "@everyone",
           color: 0x57F287,
           title: "✅ Message Cleanup Complete @everyone",
           description: `Finished cleaning ${channelName} successfully.`,
